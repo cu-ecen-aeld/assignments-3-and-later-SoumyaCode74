@@ -1,3 +1,8 @@
+#include <stdlib.h>
+#include <stdio.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <unistd.h>
 #include "systemcalls.h"
 
 /**
@@ -16,8 +21,11 @@ bool do_system(const char *cmd)
  *   and return a boolean true if the system() call completed with success
  *   or false() if it returned a failure
 */
-
-    return true;
+    int ret = system(cmd);
+    if (ret == 0 && cmd != NULL)	
+	    return true;
+    else
+    	return false;
 }
 
 /**
@@ -48,6 +56,7 @@ bool do_exec(int count, ...)
     // this line is to avoid a compile warning before your implementation is complete
     // and may be removed
     command[count] = command[count];
+    va_end(args);
 
 /*
  * TODO:
@@ -58,9 +67,32 @@ bool do_exec(int count, ...)
  *   as second argument to the execv() command.
  *
 */
+	int status;
+	pid_t pid_wait;
 
-    va_end(args);
-
+	pid_t pid = fork();
+	
+	if (pid == 0){
+		/* Child process binary */
+		if(execv(command[0], command) == -1){
+			exit(EXIT_FAILURE);
+		}
+	}
+	else if (pid > 0){
+		/* Parent process binary */
+		pid_wait = wait(&status);
+		//printf("Status: %d\n", status);
+		if (WIFEXITED(status) && WEXITSTATUS(status)){
+			return false;
+		}
+		if (pid_wait == -1){
+			return false;
+		}
+	}
+	else{
+		/* Parent process binary, if child could not be created */
+		return false;
+	}
     return true;
 }
 
