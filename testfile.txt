@@ -1,1 +1,1 @@
-home is /home/vboxuser
+home is $HOME

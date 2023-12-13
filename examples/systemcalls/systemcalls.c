@@ -3,6 +3,8 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
+#include <sys/stat.h>
+#include <fcntl.h>
 #include "systemcalls.h"
 
 /**
@@ -115,7 +117,7 @@ bool do_exec_redirect(const char *outputfile, int count, ...)
     // this line is to avoid a compile warning before your implementation is complete
     // and may be removed
     command[count] = command[count];
-
+    va_end(args);
 
 /*
  * TODO
@@ -124,8 +126,41 @@ bool do_exec_redirect(const char *outputfile, int count, ...)
  *   The rest of the behaviour is same as do_exec()
  *
 */
-
-    va_end(args);
-
+	int status;
+	pid_t pid_wait;
+	int fd = open(outputfile, O_WRONLY|O_TRUNC|O_CREAT);
+	if (fd == -1)
+		return false;
+	
+	pid_t pid = fork();
+	
+	if (pid == 0){
+		/* Child process binary */
+		if (dup2(fd, 1) == -1){
+			exit(EXIT_FAILURE);
+		}
+		if(execv(command[0], command) == -1){
+			exit(EXIT_FAILURE);
+		}
+		else{
+		      exit(EXIT_SUCCESS);
+		}
+		close(fd);
+	}
+	else if (pid > 0){
+		/* Parent process binary */
+		pid_wait = wait(&status);
+		//printf("Status: %d\n", status);
+		if (WIFEXITED(status) && WEXITSTATUS(status)){
+			return false;
+		}
+		if (pid_wait == -1){
+			return false;
+		}
+	}
+	else{
+		/* Parent process binary, if child could not be created */
+		return false;
+	}
     return true;
 }
