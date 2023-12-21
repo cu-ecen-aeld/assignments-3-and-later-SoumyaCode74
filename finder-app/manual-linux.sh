@@ -87,7 +87,7 @@ ${CROSS_COMPILE}readelf -a bin/busybox | grep "Shared library"
 
 # TODO: Add library dependencies to rootfs
 SYSROOT=$(${CROSS_COMPILE}gcc -print-sysroot)
-SRC=${HOME}/${ASSIGNMENTDIR}/libs
+SRC=${ASSIGNMENTDIR}/libs
 export SYSROOT=$SRC
 cp -a $SYSROOT/lib/ld-linux-aarch64.so.1 lib
 cp -a $SYSROOT/lib64/ld-2.30.so lib64
