@@ -100,6 +100,8 @@ echo "Library dependencies"
 ${CROSS_COMPILE}readelf -a bin/busybox | grep "program interpreter"
 ${CROSS_COMPILE}readelf -a bin/busybox | grep "Shared library"
 
+ls -lt ${OUTDIR}/rootfs
+
 # TODO: Add library dependencies to rootfs
 #SYSROOT=$(${CROSS_COMPILE}gcc -print-sysroot)
 #SRC=${ASSIGNMENTDIR}/libs
@@ -114,8 +116,8 @@ ${CROSS_COMPILE}readelf -a bin/busybox | grep "Shared library"
 #cp -a $SYSROOT/lib64/libresolv-2.30.so lib64
 
 # TODO: Make device nodes
-sudo mknod -m 666 dev/null c 1 3
-sudo mknod -m 600 dev/console c 5 1
+sudo mknod -m 666 ${OUTDIR}/rootfs/dev/null c 1 3
+sudo mknod -m 600 ${OUTDIR}/rootfs/dev/console c 5 1
 
 # TODO: Clean and build the writer utility
 cd ${FINDER_APP_DIR}
