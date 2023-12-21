@@ -24,6 +24,28 @@ fi
 
 mkdir -p ${OUTDIR}
 
+# TODO: Create necessary base directories
+mkdir ${OUTDIR}/rootfs
+mkdir ${OUTDIR}/rootfs/lib ${OUTDIR}/rootfs/lib64
+
+# TODO: Add library dependencies to rootfs
+SYSROOT=$(${CROSS_COMPILE}gcc -print-sysroot)
+#SRC=${ASSIGNMENTDIR}/libs
+export SYSROOT=libs
+cp -a $SYSROOT/lib/ld-linux-aarch64.so.1 ${OUTDIR}/rootfs/lib
+cp -a $SYSROOT/lib64/ld-2.30.so ${OUTDIR}/rootfs/lib64
+cp -a $SYSROOT/lib64/libc.so.6 ${OUTDIR}/rootfs/lib64
+cp -a $SYSROOT/lib64/libm.so.6 ${OUTDIR}/rootfs/lib64
+cp -a $SYSROOT/lib64/libresolv.so.2 ${OUTDIR}/rootfs/lib64
+cp -a $SYSROOT/lib64/libc-2.30.so ${OUTDIR}/rootfs/lib64
+cp -a $SYSROOT/lib64/libm-2.30.so ${OUTDIR}/rootfs/lib64
+cp -a $SYSROOT/lib64/libresolv-2.30.so ${OUTDIR}/rootfs/lib64
+
+cd ${OUTDIR}/rootfs
+mkdir bin dev etc proc sbin sys tmp usr var
+mkdir usr/bin usr/lib usr/sbin
+mkdir -p var/log
+
 cd "$OUTDIR"
 if [ ! -d "${OUTDIR}/linux-stable" ]; then
     #Clone only if the repository does not exist.
@@ -56,13 +78,6 @@ then
     sudo rm  -rf ${OUTDIR}/rootfs
 fi
 
-# TODO: Create necessary base directories
-mkdir ${OUTDIR}/rootfs
-cd ${OUTDIR}/rootfs
-mkdir bin dev etc lib lib64 proc sbin sys tmp usr var
-mkdir usr/bin usr/lib usr/sbin
-mkdir -p var/log
-
 cd "$OUTDIR"
 if [ ! -d "${OUTDIR}/busybox" ]
 then
@@ -86,17 +101,17 @@ ${CROSS_COMPILE}readelf -a bin/busybox | grep "program interpreter"
 ${CROSS_COMPILE}readelf -a bin/busybox | grep "Shared library"
 
 # TODO: Add library dependencies to rootfs
-SYSROOT=$(${CROSS_COMPILE}gcc -print-sysroot)
-SRC=${ASSIGNMENTDIR}/libs
-export SYSROOT=$SRC
-cp -a $SYSROOT/lib/ld-linux-aarch64.so.1 lib
-cp -a $SYSROOT/lib64/ld-2.30.so lib64
-cp -a $SYSROOT/lib64/libc.so.6 lib64
-cp -a $SYSROOT/lib64/libm.so.6 lib64
-cp -a $SYSROOT/lib64/libresolv.so.2 lib64
-cp -a $SYSROOT/lib64/libc-2.30.so lib64
-cp -a $SYSROOT/lib64/libm-2.30.so lib64
-cp -a $SYSROOT/lib64/libresolv-2.30.so lib64
+#SYSROOT=$(${CROSS_COMPILE}gcc -print-sysroot)
+#SRC=${ASSIGNMENTDIR}/libs
+#export SYSROOT=$SRC
+#cp -a $SYSROOT/lib/ld-linux-aarch64.so.1 lib
+#cp -a $SYSROOT/lib64/ld-2.30.so lib64
+#cp -a $SYSROOT/lib64/libc.so.6 lib64
+#cp -a $SYSROOT/lib64/libm.so.6 lib64
+#cp -a $SYSROOT/lib64/libresolv.so.2 lib64
+#cp -a $SYSROOT/lib64/libc-2.30.so lib64
+#cp -a $SYSROOT/lib64/libm-2.30.so lib64
+#cp -a $SYSROOT/lib64/libresolv-2.30.so lib64
 
 # TODO: Make device nodes
 sudo mknod -m 666 dev/null c 1 3
