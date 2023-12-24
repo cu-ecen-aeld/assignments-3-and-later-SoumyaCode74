@@ -7,7 +7,7 @@ on:
             - '*'
 jobs:
     unit-test:
-        container: --tls cuaesd/aesd-autotest:unit-test
+        container: cuaesd/aesd-autotest:unit-test
         runs-on: self-hosted
         steps:
           - uses: actions/checkout@v2
