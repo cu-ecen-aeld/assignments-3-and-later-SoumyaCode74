@@ -7,7 +7,7 @@ on:
             - '*'
 jobs:
     unit-test:
-        container: --disable-content-trust DOCKER_TLS_VERIFY=0 cuaesd/aesd-autotest:unit-test
+        container: --disable-content-trust --tls cuaesd/aesd-autotest:unit-test
         runs-on: self-hosted
         steps:
           - uses: actions/checkout@v2
