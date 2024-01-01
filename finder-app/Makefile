@@ -1,22 +1,19 @@
-ARCH=
-CROSS_COMPILE=
-CFLAGS=-g -Wall 
+CFLAGS = -g -Wall
 
-ifeq ($(strip $(CROSS_COMPILE)),)
-	CROSS_COMPILE=gcc
-endif
-ifeq ($(strip $(ARCH)),)
-	ARCH=x86_64
+ifdef CROSS_COMPILE
+	CC = $(CROSS_COMPILE)gcc
+else
+	CC = gcc
 endif
 
 all: writer
 
 writer: writer.o
-	$(CROSS_COMPILE) $(CFLAGS) -I/ writer.o -o writer
+	$(CC) $(CFLAGS) writer.o -o writer
 
 writer.o: writer.c
-	$(CROSS_COMPILE) $(CFLAGS) -c -o writer.o writer.c
+	$(CC) $(CFLAGS) -c writer.c -o writer.o
 
 clean:
-	rm -rf *.o writer
-
+	rm -f writer
+	rm -f *.o
