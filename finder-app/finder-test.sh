@@ -52,10 +52,10 @@ fi
 #make
 for i in $( seq 1 $NUMFILES)
 do
-	/etc/finder-app/writer.sh "$WRITEDIR/${username}$i.txt" "$WRITESTR"
+	writer.sh "$WRITEDIR/${username}$i.txt" "$WRITESTR"
 done
 
-OUTPUTSTRING=$(/etc/finder-app/finder.sh "$WRITEDIR" "$WRITESTR"); $OUTPUTSTRING > /tmp/assignment4-result.txt
+OUTPUTSTRING=$(finder.sh "$WRITEDIR" "$WRITESTR"); $OUTPUTSTRING > /tmp/assignment4-result.txt
 
 # remove temporary directories
 rm -rf /tmp/aeld-data
