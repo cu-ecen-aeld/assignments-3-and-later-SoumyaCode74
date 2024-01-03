@@ -1,7 +1,4 @@
 name: assignment-test
-defaults:
-    run:
-        working-directory: /home/vboxuser/trial
 on: 
     push:
         tags-ignore:
