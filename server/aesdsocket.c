@@ -103,6 +103,7 @@ int main(int argc, char *argv[])
 	bind_status=bind(socket_fd,servinfo->ai_addr,sizeof(struct sockaddr));
 	if(bind_status==-1)
 	{
+		printf("Binding failed\n");
 		perror("Binding error");
 		freeaddrinfo(servinfo);
 		syslog(LOG_ERR, "Binding failed");
