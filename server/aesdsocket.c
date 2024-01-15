@@ -11,6 +11,8 @@
 #include <fcntl.h>
 #include <signal.h>
 
+#define BUFFER_SIZE	(1024)
+
 
 int socket_fd,accept_return; //Socket fd and client connection
 int status; //Daemon return status
@@ -53,13 +55,13 @@ int main(int argc, char *argv[])
 	int getaddr,bind_status,listen_status;
 	ssize_t rec_status=1,write_status;
 	socklen_t size=sizeof(struct sockaddr); 
-	char buff[100];
+	char buff[BUFFER_SIZE]; //Set up buffer of 1 KB
 	int fd_status,send_status;
 	int total_bytes=0,packet_bytes_total=0;
 	int write_flag=1;
 	int i; 
 	
-	openlog(NULL,LOG_PID, LOG_USER); //To setup logging with LOG_USER
+	openlog(NULL,LOG_PID, LOG_USER); //Initialize system logger
 	
 	
 	//To start a daemon process
@@ -88,7 +90,8 @@ int main(int argc, char *argv[])
 	socket_fd=socket(PF_INET, SOCK_STREAM, 0);
 	if(socket_fd==-1)
 	{
-		syslog(LOG_ERR, "Couldn't create a socket");
+		perror("Socket could not be created!");
+		syslog(LOG_ERR, "Socket could not be created");
 		exit(1);
 	}
 	
@@ -115,7 +118,8 @@ int main(int argc, char *argv[])
 	fd_status=open("/var/tmp/aesdsocketdata", O_WRONLY | O_CREAT | O_TRUNC, S_IRWXU | S_IRWXG | S_IRWXO); //To create a file and give permissions to all
 	if (fd_status==-1)
 	{
-		syslog(LOG_ERR, "The file could not be created/found");
+		perror("The file could not be created or found");
+		syslog(LOG_ERR, "The file could not be created or found");
 		exit(1);
 	}
 	close(fd_status);
@@ -123,7 +127,7 @@ int main(int argc, char *argv[])
 	while(1)
 	{
 	
-	listen_status=listen(socket_fd,20); //Max queue of connections set to 20
+	listen_status=listen(socket_fd,100);
 	if(listen_status==-1)
 	{
 		syslog(LOG_ERR, "Listening to the connections failed");
@@ -133,6 +137,7 @@ int main(int argc, char *argv[])
 	accept_return=accept(socket_fd,(struct sockaddr *)&client_addr,&size);
 	if(accept_return==-1)
 	{
+		perror("Connection could not be accepted");
 		syslog(LOG_ERR, "Connection could not be accepted");
 		exit(1);
 	}
@@ -143,21 +148,22 @@ int main(int argc, char *argv[])
 	}
 	
 	
-	store_data = (char*)malloc(100);
+	store_data = (char*)malloc(BUFFER_SIZE);
 	if(store_data==NULL)
 	{
+		perror("Memory could not be allocated");
 		syslog(LOG_ERR, "Memory couldn't be allocated");
 		exit(1);
 	}
 	
-	memset(store_data,0,100);
+	memset(store_data,0,BUFFER_SIZE);
 	
-	write_flag=1;
+	write_flag=0;
 	
-	while(!write_flag)
+	while(!write_flag) // Start infinite loop to keep accepting incoming messages until signal comes
 	{
 	
-	rec_status=recv(accept_return,buff,100,0);
+	rec_status=recv(accept_return,buff,BUFFER_SIZE,0);
 	if(rec_status==-1)
 	{
 		syslog(LOG_ERR, "Error in reception of data packets from client");
@@ -165,32 +171,35 @@ int main(int argc, char *argv[])
 	}
 	
 	
-	for(i=0;i<100;i++)
+	for(i=0;i<BUFFER_SIZE;i++)
 	{
 		if(buff[i]=='\n')
 		{
 			i++;
-			write_flag=0;
-			total_bytes+=i;
+			write_flag=1;
 			break;
 		}	
 		
 	}
+	total_bytes+=i;
+	printf("Total bytes received till now: %d\n", total_bytes);
 	
 	store_data=(char *)realloc(store_data,total_bytes);
 	if(store_data==NULL)
 	{
+		perror("Memory could not be allocated");
 		syslog(LOG_ERR, "Reallocation of memory failed");
 		exit(1);
 	}
 	memcpy(store_data+total_bytes-i,buff,i);
-	memset(buff,0,100);
+	memset(buff,0,BUFFER_SIZE);
 	}
 	
 	fd_status = open("/var/tmp/aesdsocketdata", O_APPEND | O_WRONLY, S_IRWXU | S_IRWXG | S_IRWXO);
 	if(fd_status==-1)
 	{
-		syslog(LOG_ERR, "Could not open the file");
+		perror("Couldn't open file");
+		syslog(LOG_ERR, "Couldn't open file");
 		exit(1);
 	}
 		
@@ -198,7 +207,8 @@ int main(int argc, char *argv[])
 	write_status= write(fd_status,store_data,total_bytes);
 	if(write_status!=total_bytes)
 	{
-		syslog(LOG_ERR, "Could not write total bytes to the file");
+		perror("Could not write all the bytes to the file");
+		syslog(LOG_ERR, "Could not write all the bytes to the file");
 		exit(1);
 	}
 	close(fd_status);
@@ -208,7 +218,8 @@ int main(int argc, char *argv[])
 	int op_fd=open("/var/tmp/aesdsocketdata",O_RDONLY);
 	if(op_fd==-1)
 	{
-		syslog(LOG_ERR, "Could not open the file to read");
+		perror("Could not open file for reading");
+		syslog(LOG_ERR, "Could not open file for reading");
 		exit(1);
 	}
 		
