@@ -14,6 +14,7 @@
 #include <errno.h>
 
 #define BUFFER_SIZE	(1024)
+#define PORT		(9000)
 
 
 int socket_fd,accept_return; //Socket fd and client connection
@@ -22,6 +23,7 @@ int status; //Daemon return status
 //Structure for bind and accept
 struct addrinfo hints;
 struct addrinfo *servinfo;
+struct sockaddr_in serv_addr;
 struct sockaddr_in client_addr;
 
 char *store_data=NULL; //To store data from receiver
@@ -99,12 +101,17 @@ int main(int argc, char *argv[])
 	
 	hints.ai_flags=AI_PASSIVE;
 	getaddr=getaddrinfo(NULL,"9000",&hints,&servinfo);
+	
 	if(getaddr !=0)
 	{
 		perror("Address could not be fetched");
 		syslog(LOG_ERR, "Couldn't get the server's address (%d):%s", errno, strerror(errno));
 		exit(1);
 	}
+	/*serv_addr.sin_family = AF_INET;
+	serv_addr.sin_port = PORT;
+	serv_addr.sin_addr.s_addr = */
+	setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &(int){1}, sizeof(int));
 	bind_status=bind(socket_fd,servinfo->ai_addr,sizeof(struct sockaddr));
 	if(bind_status==-1)
 	{
