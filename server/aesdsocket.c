@@ -62,7 +62,7 @@ int main(int argc, char *argv[])
 	int write_flag=1;
 	int i; 
 	
-	openlog(NULL,LOG_PID, LOG_USER); //Initialize system logger
+	openlog(NULL,LOG_PID, LOG_USER | LOG_PERROR | LOG_CONS); //Initialize system logger
 	
 	
 	//To start a daemon process
