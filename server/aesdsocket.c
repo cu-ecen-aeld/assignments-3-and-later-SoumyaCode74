@@ -11,6 +11,7 @@
 #include <arpa/inet.h>
 #include <fcntl.h>
 #include <signal.h>
+#include <errno.h>
 
 #define BUFFER_SIZE	(1024)
 
@@ -62,7 +63,7 @@ int main(int argc, char *argv[])
 	int write_flag=1;
 	int i; 
 	
-	openlog(NULL,LOG_PID, LOG_USER | LOG_PERROR | LOG_CONS); //Initialize system logger
+	openlog(NULL,LOG_PID, LOG_USER | LOG_PERROR | LOG_CONS | LOG_DAEMON); //Initialize system logger
 	
 	
 	//To start a daemon process
@@ -71,7 +72,7 @@ int main(int argc, char *argv[])
 		if(daemon(0,0)==-1)
 		{
 			perror("Daemon not started!");
-			syslog(LOG_ERR, "Couldn't enter daemon mode");
+			syslog(LOG_ERR, "Couldn't enter daemon mode (%d): %s", errno, strerror(errno));
 			exit(1);
 		}
 	}
@@ -88,11 +89,11 @@ int main(int argc, char *argv[])
 		exit(1);
 	}
 	
-	socket_fd=socket(PF_INET, SOCK_STREAM, 0);
+	socket_fd=socket(AF_INET, SOCK_STREAM, 0);
 	if(socket_fd==-1)
 	{
 		perror("Socket could not be created!");
-		syslog(LOG_ERR, "Socket could not be created");
+		syslog(LOG_ERR, "Socket could not be created (%d):%s", errno, strerror(errno));
 		exit(1);
 	}
 	
@@ -101,7 +102,7 @@ int main(int argc, char *argv[])
 	if(getaddr !=0)
 	{
 		perror("Address could not be fetched");
-		syslog(LOG_ERR, "Couldn't get the server's address");
+		syslog(LOG_ERR, "Couldn't get the server's address (%d):%s", errno, strerror(errno));
 		exit(1);
 	}
 	bind_status=bind(socket_fd,servinfo->ai_addr,sizeof(struct sockaddr));
@@ -110,7 +111,7 @@ int main(int argc, char *argv[])
 		printf("Binding failed\n");
 		perror("Binding error");
 		freeaddrinfo(servinfo);
-		syslog(LOG_ERR, "Binding failed");
+		syslog(LOG_ERR, "Binding failed (%d):%s", errno, strerror(errno));
 		exit(1);
 	}
 	
@@ -120,7 +121,7 @@ int main(int argc, char *argv[])
 	if (fd_status==-1)
 	{
 		perror("The file could not be created or found");
-		syslog(LOG_ERR, "The file could not be created or found");
+		syslog(LOG_ERR, "The file could not be created or found (%d):%s", errno, strerror(errno));
 		exit(1);
 	}
 	close(fd_status);
@@ -131,7 +132,7 @@ int main(int argc, char *argv[])
 	listen_status=listen(socket_fd,100);
 	if(listen_status==-1)
 	{
-		syslog(LOG_ERR, "Listening to the connections failed");
+		syslog(LOG_ERR, "Listening to the connections failed (%d):%s", errno, strerror(errno));
 		exit(1);
 	}
 	
@@ -139,7 +140,7 @@ int main(int argc, char *argv[])
 	if(accept_return==-1)
 	{
 		perror("Connection could not be accepted");
-		syslog(LOG_ERR, "Connection could not be accepted");
+		syslog(LOG_ERR, "Connection could not be accepted (%d):%s", errno, strerror(errno));
 		exit(1);
 	}
 	else
@@ -153,7 +154,7 @@ int main(int argc, char *argv[])
 	if(store_data==NULL)
 	{
 		perror("Memory could not be allocated");
-		syslog(LOG_ERR, "Memory couldn't be allocated");
+		syslog(LOG_ERR, "Memory couldn't be allocated (%d):%s", errno, strerror(errno));
 		exit(1);
 	}
 	
@@ -167,7 +168,7 @@ int main(int argc, char *argv[])
 	rec_status=recv(accept_return,buff,BUFFER_SIZE,0);
 	if(rec_status==-1)
 	{
-		syslog(LOG_ERR, "Error in reception of data packets from client");
+		syslog(LOG_ERR, "Error in reception of data packets from client (%d):%s", errno, strerror(errno));
 		exit(1);
 	}
 	
@@ -189,7 +190,7 @@ int main(int argc, char *argv[])
 	if(store_data==NULL)
 	{
 		perror("Memory could not be allocated");
-		syslog(LOG_ERR, "Reallocation of memory failed");
+		syslog(LOG_ERR, "Reallocation of memory failed (%d):%s", errno, strerror(errno));
 		exit(1);
 	}
 	memcpy(store_data+total_bytes-i,buff,i);
