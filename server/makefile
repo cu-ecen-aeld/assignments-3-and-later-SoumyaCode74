@@ -1,10 +1,10 @@
 CC = $(CROSS_COMPILE)gcc
-COMPFLAG = -Wall -Werror			
+CFLAGS = -Wall			
 .PHONY: all
 all: aesdsocket
 writer :
-	$(CC) $(COMPFLAG) -c aesdsocket.c -o aesdsocket.o
-	$(CC) $(COMPFLAG) -o aesdsocket aesdsocket.o	
+	$(CC) $(CFLAGS) -c aesdsocket.c -o aesdsocket.o
+	$(CC) $(CFLAGS) -o aesdsocket aesdsocket.o	
 	
 .PHONY: clean
 clean:
