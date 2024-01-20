@@ -1,264 +1,284 @@
+/**
+ * A simple socket server to accept incoming connection
+ * and echo received data back to client.
+ */
+
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
+#include <syslog.h>
+#include <signal.h>
+#include <unistd.h>
 #include <sys/types.h>
 #include <sys/socket.h>
-#include <sys/stat.h>
-#include <syslog.h>
 #include <netdb.h>
-#include <unistd.h>
-#include <netinet/in.h>
 #include <arpa/inet.h>
-#include <fcntl.h>
-#include <signal.h>
+#include <stdlib.h>
 #include <errno.h>
+#include <sys/stat.h>
+#include <fcntl.h>
 
-#define BUFFER_SIZE	(1024)
-#define PORT		(9000)
+#define DEBUG
+#ifdef DEBUG
+#define SYSLOG_OPTIONS      (LOG_PERROR | LOG_NDELAY)
+#else
+#define SYSLOG_OPTIONS      (LOG_NDELAY)
+#endif
 
+#define MAX_ARGS            1
+#define PORT                "9000"      // Port we're listening on
+#define BACKLOG             10
+#define MAX_LEN             100
 
-int socket_fd,accept_return; //Socket fd and client connection
-int status; //Daemon return status
+volatile sig_atomic_t interrupted = 0;
+const char *log_file = "/var/tmp/aesdsocketdata";
 
-//Structure for bind and accept
-struct addrinfo hints;
-struct addrinfo *servinfo;
-struct sockaddr_in serv_addr;
-struct sockaddr_in client_addr;
-
-char *store_data=NULL; //To store data from receiver
-
-
-//Signal handler
-void signal_handler(int sig)
+static void signal_handler(int signo)
 {
-	if(sig==SIGINT)
-	{
-		syslog(LOG_INFO,"Caught SIGINT, exiting");
-	}
-	else if(sig==SIGTERM)
-	{
-		syslog(LOG_INFO,"Caught SIGTERM, exiting");
-	}
-	
-	//Delete the logging file
-	if(unlink("/var/tmp/aesdsocketdata") == -1){
-		syslog(LOG_ERR, "logger could not be deleted!");
-		exit(1);
-	}
-	//Close client connection
-	close(accept_return);
-	//Close socket
-	close(socket_fd);	
-	exit(0); 
+    interrupted = 1;
+    syslog(LOG_INFO, "Caught signal, exiting");
 }
 
+static int echo_data(int client)
+{
+    char *buf;
+    int fd, ret;
+    struct stat statbuf;
+
+    fd = open(log_file, O_RDONLY, (S_IWUSR|S_IRUSR|S_IRGRP|S_IROTH));
+    if (fd < 0) {
+        syslog(LOG_ERR, "Unable to open file %s", log_file);
+        return -1;
+    }
+
+    fstat(fd, &statbuf);
+    if ((buf = (char *)calloc(statbuf.st_size, sizeof(char))) == NULL) {
+        syslog(LOG_ERR, "Failed to allocate memory for reading file: %s", strerror(errno));
+        close(fd);
+        return -1;
+    }
+
+    if ((ret = read(fd, buf, statbuf.st_size)) == -1) {
+        syslog(LOG_ERR, "Failed to read file: %s", strerror(errno));
+    } else {
+        close(fd);
+        if ((ret = send(client, buf, statbuf.st_size, 0)) == -1)
+            syslog(LOG_ERR, "Failed to send data to client: %s", strerror(errno));
+        free(buf);
+    }
+
+    return ret;
+}
+
+/**
+ * Parse the data with newline delimiter and appaned the tokens to log_file.
+ */
+static int process_data(char *data)
+{
+    int fd;
+    char *start, *end, *token;
+    int ret = 0;    /* this is set to 0 to handle exit cases for stream w/o new line */
+
+    fd = open(log_file,
+              (O_WRONLY | O_CREAT | O_APPEND | O_DSYNC),
+              (S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH));
+    if (fd == -1) {
+        syslog(LOG_ERR, "Unable to open file %s", log_file);
+        return -1;
+    }
+
+    /* append packets to log_file when a new line present
+     * in the stream */
+    start = end = data;
+    while ((end = strchr(start, '\n')) != NULL) {
+        token = strsep(&start, "\n");
+        if ((ret = write(fd, token, strlen(token))) == -1) {
+            syslog(LOG_ERR, "Failed to write data to log file: %s", strerror(errno));
+            break;
+        }
+        write(fd, "\n", sizeof(char));
+        start = end + 1;
+    }
+
+    close(fd);
+
+    return ret;
+}
+
+/**
+ *  Creates a passive TCP socket and return socket fd to the calling
+ *  function which will be used for accepting incoming connections.
+ */
+static int create_listener_socket(void)
+{
+    int sock;
+    int opt_val = 1;
+    struct addrinfo hints, *result, *rp;
+
+    memset(&hints, 0, sizeof(hints));
+    hints.ai_family = AF_INET;      /* Allow IPv4 or IPv6 */
+    hints.ai_socktype = SOCK_STREAM;/* TCP socket */
+    hints.ai_flags = AI_PASSIVE;    /* For wildcard IP address */
+    if (getaddrinfo(NULL, PORT, &hints, &result) != 0) {
+        syslog(LOG_ERR, "getaddrinfo() failed: %s!", strerror(errno));
+        return -1;
+    }
+
+    /* Walk through returned list until we find an address structure
+     * that can be used to successfully create and bind a socket. */
+    for (rp = result; rp != NULL; rp = rp->ai_next) {
+        if ((sock = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
+            syslog(LOG_ERR, "Failed to create an socket");
+            continue;
+        }
+
+        if (setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &opt_val,
+                        sizeof(opt_val)) < 0) {
+            syslog(LOG_ERR, "Failed to set options for socket");
+        }
+
+        if (bind(sock, rp->ai_addr, rp->ai_addrlen) == 0)
+            break;
+
+        close(sock);
+    }
+
+    freeaddrinfo(result);
+
+    if (rp == NULL) {
+        syslog(LOG_ERR, "Could not bind socket to any address");
+        return -1;
+    }
+
+    if (listen(sock, BACKLOG) != 0) {
+        syslog(LOG_ERR, "Failed to mark socket to accept incoming connection requests");
+        close(sock);
+        return -1;
+    }
+
+    return sock;
+}
 
 int main(int argc, char *argv[])
 {
-	int getaddr,bind_status,listen_status;
-	ssize_t rec_status=1,write_status;
-	socklen_t size=sizeof(struct sockaddr); 
-	char buff[BUFFER_SIZE]; //Set up buffer of 1 KB
-	int fd_status,send_status;
-	int total_bytes=0,packet_bytes_total=0;
-	int write_flag=1;
-	int i; 
-	
-	openlog(NULL,LOG_PID, LOG_USER | LOG_PERROR | LOG_CONS | LOG_DAEMON); //Initialize system logger
-	
-	
-	//To start a daemon process
-	if((argc>1) && strcmp(argv[1],"-d")==0)
-	{
-		if(daemon(0,0)==-1)
-		{
-			perror("Daemon not started!");
-			syslog(LOG_ERR, "Couldn't enter daemon mode (%d): %s", errno, strerror(errno));
-			exit(1);
-		}
-	}
-	
-	//To check if a signal is received
-	if(signal(SIGINT,signal_handler)==SIG_ERR)
-	{
-		syslog(LOG_ERR,"SIGINT failed");
-		exit(1);
-	}
-	if(signal(SIGTERM,signal_handler)==SIG_ERR)
-	{
-		syslog(LOG_ERR,"SIGTERM failed");
-		exit(1);
-	}
-	
-	socket_fd=socket(AF_INET, SOCK_STREAM, 0);
-	if(socket_fd==-1)
-	{
-		perror("Socket could not be created!");
-		syslog(LOG_ERR, "Socket could not be created (%d):%s", errno, strerror(errno));
-		exit(1);
-	}
-	
-	hints.ai_flags=AI_PASSIVE;
-	getaddr=getaddrinfo(NULL,"9000",&hints,&servinfo);
-	
-	if(getaddr !=0)
-	{
-		perror("Address could not be fetched");
-		syslog(LOG_ERR, "Couldn't get the server's address (%d):%s", errno, strerror(errno));
-		exit(1);
-	}
-	/*serv_addr.sin_family = AF_INET;
-	serv_addr.sin_port = PORT;
-	serv_addr.sin_addr.s_addr = */
-	setsockopt(socket_fd, SOL_SOCKET, SO_REUSEADDR, &(int){1}, sizeof(int));
-	bind_status=bind(socket_fd,servinfo->ai_addr,sizeof(struct sockaddr));
-	if(bind_status==-1)
-	{
-		printf("Binding failed\n");
-		perror("Binding error");
-		freeaddrinfo(servinfo);
-		syslog(LOG_ERR, "Binding failed (%d):%s", errno, strerror(errno));
-		exit(1);
-	}
-	
-	freeaddrinfo(servinfo);
-	
-	fd_status=open("/var/tmp/aesdsocketdata", O_WRONLY | O_CREAT | O_TRUNC, S_IRWXU | S_IRWXG | S_IRWXO); //To create a file and give permissions to all
-	if (fd_status==-1)
-	{
-		perror("The file could not be created or found");
-		syslog(LOG_ERR, "The file could not be created or found (%d):%s", errno, strerror(errno));
-		exit(1);
-	}
-	close(fd_status);
-	
-	while(1)
-	{
-	
-	listen_status=listen(socket_fd,100);
-	if(listen_status==-1)
-	{
-		syslog(LOG_ERR, "Listening to the connections failed (%d):%s", errno, strerror(errno));
-		exit(1);
-	}
-	
-	accept_return=accept(socket_fd,(struct sockaddr *)&client_addr,&size);
-	if(accept_return==-1)
-	{
-		perror("Connection could not be accepted");
-		syslog(LOG_ERR, "Connection could not be accepted (%d):%s", errno, strerror(errno));
-		exit(1);
-	}
-	else
-	{
-		syslog(LOG_INFO,"Accepted connection from %s",inet_ntoa(client_addr.sin_addr));
-		printf("Accepted connection from %s\n",inet_ntoa(client_addr.sin_addr));
-	}
-	
-	
-	store_data = (char*)malloc(BUFFER_SIZE);
-	if(store_data==NULL)
-	{
-		perror("Memory could not be allocated");
-		syslog(LOG_ERR, "Memory couldn't be allocated (%d):%s", errno, strerror(errno));
-		exit(1);
-	}
-	
-	memset(store_data,0,BUFFER_SIZE);
-	
-	write_flag=0;
-	
-	while(!write_flag) // Start infinite loop to keep accepting incoming messages until signal comes
-	{
-	
-	rec_status=recv(accept_return,buff,BUFFER_SIZE,0);
-	if(rec_status==-1)
-	{
-		syslog(LOG_ERR, "Error in reception of data packets from client (%d):%s", errno, strerror(errno));
-		exit(1);
-	}
-	
-	
-	for(i=0;i<BUFFER_SIZE;i++)
-	{
-		if(buff[i]=='\n')
-		{
-			i++;
-			write_flag=1;
-			break;
-		}	
-		
-	}
-	total_bytes+=i;
-	printf("Total bytes received till now: %d\n", total_bytes);
-	
-	store_data=(char *)realloc(store_data,total_bytes);
-	if(store_data==NULL)
-	{
-		perror("Memory could not be allocated");
-		syslog(LOG_ERR, "Reallocation of memory failed (%d):%s", errno, strerror(errno));
-		exit(1);
-	}
-	memcpy(store_data+total_bytes-i,buff,i);
-	memset(buff,0,BUFFER_SIZE);
-	}
-	
-	fd_status = open("/var/tmp/aesdsocketdata", O_APPEND | O_WRONLY, S_IRWXU | S_IRWXG | S_IRWXO);
-	if(fd_status==-1)
-	{
-		perror("Couldn't open file");
-		syslog(LOG_ERR, "Couldn't open file");
-		exit(1);
-	}
-		
-	
-	write_status= write(fd_status,store_data,total_bytes);
-	if(write_status!=total_bytes)
-	{
-		perror("Could not write all the bytes to the file");
-		syslog(LOG_ERR, "Could not write all the bytes to the file");
-		exit(1);
-	}
-	close(fd_status);
-	
-	packet_bytes_total += total_bytes;
-		
-	int op_fd=open("/var/tmp/aesdsocketdata",O_RDONLY);
-	if(op_fd==-1)
-	{
-		perror("Could not open file for reading");
-		syslog(LOG_ERR, "Could not open file for reading");
-		exit(1);
-	}
-		
-	char read_arr[packet_bytes_total];
-	memset(read_arr,0,packet_bytes_total);
-		
-	int rd_status=read(op_fd,&read_arr,packet_bytes_total);
-	if(rd_status==-1)
-	{
-		syslog(LOG_ERR, "Could not read bytes from the file");
-		exit(1);
-	}
-	else if(rd_status < packet_bytes_total) 
-	{
-		syslog(LOG_ERR, "The bytes read do not match the bytes requested to be read");
-		exit(1);
-	}		
-	send_status=send(accept_return,&read_arr,packet_bytes_total,0);
-	if(send_status==-1)
-	{
-		syslog(LOG_ERR, "The data packets couldn't be send to the client");
-		exit(1);
-	}
-		
-	close(op_fd);
-	free(store_data);
-	syslog(LOG_INFO,"Closed connection with %s\n",inet_ntoa(client_addr.sin_addr));
-	total_bytes=0;
-	}
+    int ret = 0;
+    struct sigaction sa;
+    int opt;
+    int run_as_daemon = 0;
+    int socket, client_fd;
+    struct sockaddr_in client_addr;
+    socklen_t client_addrlen = sizeof(client_addr);
+    char client_ip[INET_ADDRSTRLEN] = {};
+    char stream[MAX_LEN + 1] = {};
+    ssize_t nb;
+    char *buf;
+    int buf_len = 0;
+    int error = 0;
+    pid_t pid;
 
-	closelog();
-	return 0;
+    /* open a connection to system logger */
+    openlog(NULL, SYSLOG_OPTIONS, LOG_USER);
+
+    /* parse command-line args */
+    while ((opt = getopt(argc, argv, "d")) != -1) {
+        switch (opt) {
+        case 'd':
+            run_as_daemon = 1;
+            syslog(LOG_INFO, "%s server will run as a daemon\n", argv[0]);
+            break;
+        }
+    }
+
+    /* set-up handler for SIGINT & SIGTERM signals */
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = 0;
+    sa.sa_handler = signal_handler;
+    if (sigaction(SIGINT, &sa, NULL) == -1) {
+        syslog(LOG_ERR, "Failed to change action for SIGINT!\n");
+        return -1;
+    }
+    if (sigaction(SIGTERM, &sa, NULL) == -1) {
+        syslog(LOG_ERR, "Failed to change action for SIGTERM!\n");
+        return -1;
+    }
+
+    if ((socket = create_listener_socket()) < 0)
+        return -1;
+
+    /* Close socket when any failure occurs during a new process
+     * creation. */
+    if (run_as_daemon) {
+        pid = fork();
+        if (pid < 0) {
+            close(socket);
+            syslog(LOG_ERR, "Failed to create a new process: %s", strerror(errno));
+            return -1;
+        }
+
+        if (pid != 0)
+            exit(EXIT_SUCCESS);
+
+        if (setsid () == -1) {
+            close(socket);
+            syslog(LOG_ERR, "Failed to create a new session: %s", strerror(errno));
+            return -1;
+        }
+
+        if (chdir("/")) {
+            close(socket);
+            syslog(LOG_ERR, "Failed to change to root dir: %s", strerror(errno));
+            return -1;
+        }
+
+        /* redirect fd's 0,1,2 to /dev/null */
+        open("/dev/null", O_RDWR);
+        dup(0);
+        dup(0);
+    }
+
+    while (!interrupted) {
+        if ((client_fd = accept(socket, (struct sockaddr *) &client_addr,
+                                &client_addrlen)) < 0)
+            continue;
+
+        inet_ntop(AF_INET, &(client_addr.sin_addr), client_ip, INET6_ADDRSTRLEN);
+        syslog(LOG_INFO, "Accepted connection from %s\n", client_ip);
+
+        memset(stream, 0, MAX_LEN);
+        buf = malloc(sizeof(char));
+        *buf = '\0';
+        buf_len = 1;
+
+        while ((nb = recv(client_fd, stream, MAX_LEN, 0)) > 0) {
+            buf_len += nb;
+            if ((buf = realloc(buf, (sizeof(char) * buf_len))) == NULL) {
+                syslog(LOG_ERR, "Failed to reallocate memory for data stream: %s", strerror(errno));
+                error = 1;
+                break;
+            }
+
+            strncat(buf, stream, nb);
+            if (process_data(buf) > 0) {
+                if (echo_data(client_fd) < 0)
+                    error = 1;
+            }
+
+            memset(stream, 0, MAX_LEN);
+        }
+
+        if (buf != NULL)
+            free(buf);
+
+        close(client_fd);
+
+        /* break for any errors */
+        if (error)
+            break;
+    }
+
+    remove(log_file);
+    close(socket);
+    shutdown(socket, SHUT_RDWR);
+    closelog();
+
+    return ret;
 }
