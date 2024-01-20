@@ -111,7 +111,7 @@ int main(int argc, char *argv[])
 	/*serv_addr.sin_family = AF_INET;
 	serv_addr.sin_port = PORT;
 	serv_addr.sin_addr.s_addr = */
-	setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &(int){1}, sizeof(int));
+	setsockopt(socket_fd, SOL_SOCKET, SO_REUSEADDR, &(int){1}, sizeof(int));
 	bind_status=bind(socket_fd,servinfo->ai_addr,sizeof(struct sockaddr));
 	if(bind_status==-1)
 	{
