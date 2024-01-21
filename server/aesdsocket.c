@@ -180,7 +180,6 @@ int main(int argc, char *argv[])
     	if ((socket = create_listener_socket()) < 0)
         {
            syslog(LOG_ERR, "Socket could not be established!");
-           return -1;
         }
         syslog(LOG_INFO, "Running %s as daemon", argv[0]);
         pid = fork();
@@ -224,9 +223,6 @@ int main(int argc, char *argv[])
         syslog(LOG_ERR, "Failed to change action for SIGTERM!\n");
         return -1;
     }
-
-    if ((socket = create_listener_socket()) < 0)
-        return -1;
 
     while (!interrupted) {
         if ((client_fd = accept(socket, (struct sockaddr *) &client_addr,
