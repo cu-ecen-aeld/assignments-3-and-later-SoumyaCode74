@@ -17,17 +17,11 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 
-#define DEBUG
-#ifdef DEBUG
-#define SYSLOG_OPTIONS      (LOG_PERROR | LOG_NDELAY)
-#else
-#define SYSLOG_OPTIONS      (LOG_NDELAY)
-#endif
 
 #define MAX_ARGS            1
-#define PORT                "9000"      // Port we're listening on
+#define PORT                "9000"
 #define BACKLOG             10
-#define MAX_LEN             100
+#define MAX_LEN             1024
 
 volatile sig_atomic_t interrupted = 0;
 const char *log_file = "/var/tmp/aesdsocketdata";
@@ -133,11 +127,15 @@ static int create_listener_socket(void)
 
         if (setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &opt_val,
                         sizeof(opt_val)) < 0) {
-            syslog(LOG_ERR, "Failed to set options for socket");
+            syslog(LOG_ERR, "Failed to set options for socket: %s", strerror(errno));
         }
 
-        if (bind(sock, rp->ai_addr, rp->ai_addrlen) == 0)
-            break;
+        if (bind(sock, rp->ai_addr, rp->ai_addrlen) < 0){
+            syslog(LOG_ERR, "Binding failed: %s", strerror(errno));
+        }
+        else{
+           break; // Exit loop on successful connection setup
+        }
 
         close(sock);
     }
@@ -162,8 +160,8 @@ int main(int argc, char *argv[])
 {
     int ret = 0;
     struct sigaction sa;
-    int opt;
-    int run_as_daemon = 0;
+ //   int opt;
+ //   int run_as_daemon = 0;
     int socket, client_fd;
     struct sockaddr_in client_addr;
     socklen_t client_addrlen = sizeof(client_addr);
@@ -172,45 +170,23 @@ int main(int argc, char *argv[])
     ssize_t nb;
     char *buf;
     int buf_len = 0;
-    int error = 0;
+//    int error = 0;
     pid_t pid;
 
-    /* open a connection to system logger */
-    openlog(NULL, SYSLOG_OPTIONS, LOG_USER);
+    openlog(NULL, LOG_PERROR | LOG_NDELAY, LOG_USER);	// log error prints and without delay
 
-    /* parse command-line args */
-    while ((opt = getopt(argc, argv, "d")) != -1) {
-        switch (opt) {
-        case 'd':
-            run_as_daemon = 1;
-            syslog(LOG_INFO, "%s server will run as a daemon\n", argv[0]);
-            break;
+    if (argc > 1 && strcmp(argv[0], "-d")){
+    	syslog(LOG_INFO, "Requested to run %s as server, setting up socket for connection", argv[0]);
+    	if ((socket = create_listener_socket()) < 0)
+        {
+           syslog(LOG_ERR, "Socket could not be established!");
+           return -1;
         }
-    }
-
-    /* set-up handler for SIGINT & SIGTERM signals */
-    sigemptyset(&sa.sa_mask);
-    sa.sa_flags = 0;
-    sa.sa_handler = signal_handler;
-    if (sigaction(SIGINT, &sa, NULL) == -1) {
-        syslog(LOG_ERR, "Failed to change action for SIGINT!\n");
-        return -1;
-    }
-    if (sigaction(SIGTERM, &sa, NULL) == -1) {
-        syslog(LOG_ERR, "Failed to change action for SIGTERM!\n");
-        return -1;
-    }
-
-    if ((socket = create_listener_socket()) < 0)
-        return -1;
-
-    /* Close socket when any failure occurs during a new process
-     * creation. */
-    if (run_as_daemon) {
+        syslog(LOG_INFO, "Running %s as daemon", argv[0]);
         pid = fork();
         if (pid < 0) {
             close(socket);
-            syslog(LOG_ERR, "Failed to create a new process: %s", strerror(errno));
+            syslog(LOG_ERR, "Failed to start daemon: %s", strerror(errno));
             return -1;
         }
 
@@ -233,7 +209,24 @@ int main(int argc, char *argv[])
         open("/dev/null", O_RDWR);
         dup(0);
         dup(0);
+     }    
+    
+    	
+    /* set-up handler for SIGINT & SIGTERM signals */
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = 0;
+    sa.sa_handler = signal_handler;
+    if (sigaction(SIGINT, &sa, NULL) == -1) {
+        syslog(LOG_ERR, "Failed to change action for SIGINT!\n");
+        return -1;
     }
+    if (sigaction(SIGTERM, &sa, NULL) == -1) {
+        syslog(LOG_ERR, "Failed to change action for SIGTERM!\n");
+        return -1;
+    }
+
+    if ((socket = create_listener_socket()) < 0)
+        return -1;
 
     while (!interrupted) {
         if ((client_fd = accept(socket, (struct sockaddr *) &client_addr,
@@ -241,7 +234,6 @@ int main(int argc, char *argv[])
             continue;
 
         inet_ntop(AF_INET, &(client_addr.sin_addr), client_ip, INET6_ADDRSTRLEN);
-        syslog(LOG_INFO, "Accepted connection from %s\n", client_ip);
 
         memset(stream, 0, MAX_LEN);
         buf = malloc(sizeof(char));
@@ -252,14 +244,13 @@ int main(int argc, char *argv[])
             buf_len += nb;
             if ((buf = realloc(buf, (sizeof(char) * buf_len))) == NULL) {
                 syslog(LOG_ERR, "Failed to reallocate memory for data stream: %s", strerror(errno));
-                error = 1;
                 break;
             }
 
             strncat(buf, stream, nb);
             if (process_data(buf) > 0) {
                 if (echo_data(client_fd) < 0)
-                    error = 1;
+                    break;
             }
 
             memset(stream, 0, MAX_LEN);
@@ -269,10 +260,6 @@ int main(int argc, char *argv[])
             free(buf);
 
         close(client_fd);
-
-        /* break for any errors */
-        if (error)
-            break;
     }
 
     remove(log_file);
